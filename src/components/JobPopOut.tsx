@@ -26,7 +26,8 @@ import {
   Edit2,
   Save,
   Globe,
-  ExternalLink
+  ExternalLink,
+  ImageIcon
 } from "lucide-react"
 
 interface JobPopOutProps {
@@ -43,12 +44,14 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
   // Edit States
   const [editCost, setEditCost] = useState('')
   const [editWebsite, setEditWebsite] = useState('')
+  const [editScreenshot, setEditScreenshot] = useState('') // New state
 
   // Reset states when job changes
   useEffect(() => {
     if (job) {
       setEditCost(job.cost.toString())
       setEditWebsite(job.website_url || '')
+      setEditScreenshot(job.screenshot_url || '') // Reset screenshot
       setIsEditing(false)
     }
   }, [job])
@@ -61,7 +64,8 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
       .from('jobs')
       .update({ 
         cost: Number(editCost),
-        website_url: editWebsite 
+        website_url: editWebsite,
+        screenshot_url: editScreenshot // Save screenshot to DB
       })
       .eq('id', job.id)
 
@@ -183,6 +187,32 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
                     </a>
                   ) : (
                     <span className="text-slate-600 text-sm">Not added</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* NEW SCREENSHOT FIELD */}
+            <div className="col-span-2 bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
+              <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Portfolio Screenshot URL</p>
+              {isEditing ? (
+                <div className="relative">
+                  <ImageIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                  <Input 
+                    placeholder="https://imgur.com/your-image.jpg" 
+                    value={editScreenshot} 
+                    onChange={(e) => setEditScreenshot(e.target.value)}
+                    className="pl-8 bg-slate-950 border-slate-700 h-9"
+                  />
+                </div>
+              ) : (
+                <div className="text-sm font-medium text-slate-300 truncate">
+                  {job.screenshot_url ? (
+                    <span className="text-green-500 flex items-center gap-2">
+                      <CheckCircle2 className="w-3 h-3" /> Image URL Linked
+                    </span>
+                  ) : (
+                    <span className="text-slate-600 italic">No image linked yet</span>
                   )}
                 </div>
               )}
