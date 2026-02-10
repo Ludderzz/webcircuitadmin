@@ -27,7 +27,7 @@ import {
   Save,
   Globe,
   ExternalLink,
-  Zap // Swapped ImageIcon for Zap to show "Auto" feel
+  Zap 
 } from "lucide-react"
 
 interface JobPopOutProps {
@@ -48,7 +48,7 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
   // Reset states when job changes
   useEffect(() => {
     if (job) {
-      setEditCost(job.cost.toString())
+      setEditCost(job.cost?.toString() || '0')
       setEditWebsite(job.website_url || '')
       setIsEditing(false)
     }
@@ -59,25 +59,28 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
   const handleSave = async () => {
     setLoading(true)
     
-    // AUTOMATION LOGIC:
-    // If a website exists, we create the Microlink URL. 
-    // If no website, we clear the screenshot.
+    // 1. Generate the automated screenshot URL
     const autoScreenshot = editWebsite 
       ? `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&meta=false&embed=screenshot.url`
       : ''
 
+    // 2. Update Supabase
     const { error } = await supabase
       .from('jobs')
       .update({ 
         cost: Number(editCost),
         website_url: editWebsite,
-        screenshot_url: autoScreenshot // Automated save
+        screenshot_url: autoScreenshot
       })
       .eq('id', job.id)
 
     if (!error) {
-      onUpdate()
+      // 3. Trigger the parent refresh
+      await onUpdate() 
       setIsEditing(false)
+    } else {
+      console.error("Error saving:", error.message)
+      alert("Failed to save changes.")
     }
     setLoading(false)
   }
@@ -89,7 +92,7 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
       .update({ status: newStatus })
       .eq('id', job.id)
 
-    if (!error) onUpdate()
+    if (!error) await onUpdate()
     setLoading(false)
     onClose()
   }
@@ -98,7 +101,7 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
     if (!confirm("Are you sure you want to delete this project?")) return
     setLoading(true)
     const { error } = await supabase.from('jobs').delete().eq('id', job.id)
-    if (!error) onUpdate()
+    if (!error) await onUpdate()
     setLoading(false)
     onClose()
   }
@@ -111,12 +114,10 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
         <div className="p-8 space-y-8">
           <SheetHeader className="space-y-4 text-left">
             <div className="flex items-center justify-between">
-              <div className="flex gap-2">
-                <Badge variant="outline" className={job.status === 'complete' ? 'border-green-500 text-green-500 bg-green-500/10' : 'border-orange-500 text-orange-500 bg-orange-500/10'}>
-                  {job.status === 'complete' ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <Clock className="mr-1 h-3 w-3" />}
-                  {job.status.toUpperCase()}
-                </Badge>
-              </div>
+              <Badge variant="outline" className={job.status === 'complete' ? 'border-green-500 text-green-500 bg-green-500/10' : 'border-orange-500 text-orange-500 bg-orange-500/10'}>
+                {job.status === 'complete' ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <Clock className="mr-1 h-3 w-3" />}
+                {job.status.toUpperCase()}
+              </Badge>
               
               <Button 
                 variant="outline" 
@@ -134,16 +135,17 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
               </div>
               <div>
                 <SheetTitle className="text-3xl font-bold text-slate-50 tracking-tight leading-none">
-                  {job.business_name}
+                  {job.business_name || "New Project"}
                 </SheetTitle>
                 <SheetDescription className="text-slate-500 mt-2 flex items-center gap-2">
-                  <User className="h-3 w-3" /> {job.customer_name}
+                  <User className="h-3 w-3" /> {job.customer_name || "No Client Name"}
                 </SheetDescription>
               </div>
             </div>
           </SheetHeader>
 
           <div className="grid grid-cols-2 gap-4">
+            {/* REVENUE BOX */}
             <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
               <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Revenue</p>
               {isEditing ? (
@@ -158,11 +160,12 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
                 </div>
               ) : (
                 <div className="text-2xl font-bold text-slate-50">
-                  £{Number(job.cost).toLocaleString('en-GB')}
+                  £{Number(job.cost || 0).toLocaleString('en-GB')}
                 </div>
               )}
             </div>
             
+            {/* WEBSITE LINK BOX */}
             <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
               <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Website Link</p>
               {isEditing ? (
@@ -176,34 +179,44 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
                   />
                 </div>
               ) : (
-                <div className="truncate">
+                <div className="truncate text-sm">
                   {job.website_url ? (
-                    <a href={job.website_url} target="_blank" className="text-blue-400 text-sm hover:underline flex items-center gap-1">
-                      View Site <ExternalLink className="w-3 h-3" />
+                    <a href={job.website_url} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline flex items-center gap-1">
+                      {new URL(job.website_url).hostname} <ExternalLink className="w-3 h-3" />
                     </a>
                   ) : (
-                    <span className="text-slate-600 text-sm italic">No link</span>
+                    <span className="text-slate-600 italic">No link</span>
                   )}
                 </div>
               )}
             </div>
 
-            {/* AUTOMATED DISPLAY STATUS */}
+            {/* AUTOMATED PREVIEW STATUS */}
             <div className="col-span-2 bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
               <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Portfolio Showcase Status</p>
               <div className="flex items-center justify-between">
-                <div className="text-sm font-medium text-slate-300">
-                  {editWebsite ? (
-                    <span className="text-blue-400 flex items-center gap-2">
-                      <Zap className="w-3 h-3 animate-pulse" /> Auto-generating preview...
-                    </span>
+                <div className="text-sm font-medium">
+                  {isEditing ? (
+                    editWebsite ? (
+                      <span className="text-blue-400 flex items-center gap-2">
+                        <Zap className="w-3 h-3 animate-pulse" /> Auto-generating preview...
+                      </span>
+                    ) : (
+                      <span className="text-slate-600 italic">Link required for preview</span>
+                    )
                   ) : (
-                    <span className="text-slate-600 italic">Enter a website URL to show in portfolio</span>
+                    job.screenshot_url ? (
+                      <span className="text-green-500 flex items-center gap-2">
+                        <CheckCircle2 className="w-3 h-3" /> Preview Ready
+                      </span>
+                    ) : (
+                      <span className="text-slate-600 italic">No preview generated</span>
+                    )
                   )}
                 </div>
-                {job.screenshot_url && (
+                {job.screenshot_url && !isEditing && (
                   <Badge variant="outline" className="text-[10px] border-blue-500/50 text-blue-400">
-                    LIVE
+                    LIVE ON PORTFOLIO
                   </Badge>
                 )}
               </div>
@@ -212,7 +225,7 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
 
           {isEditing && (
             <Button onClick={handleSave} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700">
-              <Save className="w-4 h-4 mr-2" /> Update & Generate Preview
+              <Save className="w-4 h-4 mr-2" /> {loading ? "Saving..." : "Update & Sync Preview"}
             </Button>
           )}
 
@@ -220,16 +233,16 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
 
           <div className="space-y-3 pb-32">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-400 uppercase tracking-widest">
-              <FileText className="h-4 w-4" /> Brief
+              <FileText className="h-4 w-4" /> Design Brief
             </div>
-            <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 italic text-sm text-slate-300">
+            <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 text-sm text-slate-300 italic">
               "{job.details || "No details provided."}"
             </div>
           </div>
         </div>
 
         <SheetFooter className="absolute bottom-0 left-0 w-full p-6 bg-slate-950/80 backdrop-blur-md border-t border-slate-800 gap-3">
-          <Button variant="ghost" className="flex-1 text-slate-500" onClick={deleteJob} disabled={loading}>
+          <Button variant="ghost" className="flex-1 text-slate-500 hover:text-red-400" onClick={deleteJob} disabled={loading}>
             <Trash2 className="mr-2 h-4 w-4" /> Delete
           </Button>
           <Button 
