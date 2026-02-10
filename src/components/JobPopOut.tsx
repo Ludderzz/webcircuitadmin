@@ -27,7 +27,7 @@ import {
   Save,
   Globe,
   ExternalLink,
-  ImageIcon
+  Zap // Swapped ImageIcon for Zap to show "Auto" feel
 } from "lucide-react"
 
 interface JobPopOutProps {
@@ -44,14 +44,12 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
   // Edit States
   const [editCost, setEditCost] = useState('')
   const [editWebsite, setEditWebsite] = useState('')
-  const [editScreenshot, setEditScreenshot] = useState('') // New state
 
   // Reset states when job changes
   useEffect(() => {
     if (job) {
       setEditCost(job.cost.toString())
       setEditWebsite(job.website_url || '')
-      setEditScreenshot(job.screenshot_url || '') // Reset screenshot
       setIsEditing(false)
     }
   }, [job])
@@ -60,12 +58,20 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
 
   const handleSave = async () => {
     setLoading(true)
+    
+    // AUTOMATION LOGIC:
+    // If a website exists, we create the Microlink URL. 
+    // If no website, we clear the screenshot.
+    const autoScreenshot = editWebsite 
+      ? `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&meta=false&embed=screenshot.url`
+      : ''
+
     const { error } = await supabase
       .from('jobs')
       .update({ 
         cost: Number(editCost),
         website_url: editWebsite,
-        screenshot_url: editScreenshot // Save screenshot to DB
+        screenshot_url: autoScreenshot // Automated save
       })
       .eq('id', job.id)
 
@@ -110,11 +116,6 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
                   {job.status === 'complete' ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <Clock className="mr-1 h-3 w-3" />}
                   {job.status.toUpperCase()}
                 </Badge>
-                {job.is_recurring && (
-                  <Badge className="bg-blue-600 hover:bg-blue-600 text-white border-none">
-                    <Calendar className="mr-1 h-3 w-3" /> MONTHLY
-                  </Badge>
-                )}
               </div>
               
               <Button 
@@ -128,19 +129,15 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
             </div>
 
             <div className="flex items-start gap-4">
-              {job.logo_url ? (
-                <img src={job.logo_url} alt="Logo" className="w-16 h-16 rounded-xl object-cover border border-slate-800 bg-slate-900" />
-              ) : (
-                <div className="w-16 h-16 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center">
-                  <Building2 className="text-slate-700 w-8 h-8" />
-                </div>
-              )}
+              <div className="w-16 h-16 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center">
+                <Building2 className="text-slate-700 w-8 h-8" />
+              </div>
               <div>
                 <SheetTitle className="text-3xl font-bold text-slate-50 tracking-tight leading-none">
-                  {job.business_name || job.title}
+                  {job.business_name}
                 </SheetTitle>
                 <SheetDescription className="text-slate-500 mt-2 flex items-center gap-2">
-                  <User className="h-3 w-3" /> {job.customer_name || "Unknown Customer"}
+                  <User className="h-3 w-3" /> {job.customer_name}
                 </SheetDescription>
               </div>
             </div>
@@ -148,7 +145,7 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-              <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Project Revenue</p>
+              <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Revenue</p>
               {isEditing ? (
                 <div className="relative">
                   <PoundSterling className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
@@ -160,9 +157,8 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
                   />
                 </div>
               ) : (
-                <div className="flex items-center text-2xl font-bold text-slate-50">
-                  <PoundSterling className="h-5 w-5 mr-1 text-green-500" />
-                  {Number(job.cost).toLocaleString('en-GB')}
+                <div className="text-2xl font-bold text-slate-50">
+                  £{Number(job.cost).toLocaleString('en-GB')}
                 </div>
               )}
             </div>
@@ -180,48 +176,43 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
                   />
                 </div>
               ) : (
-                <div className="text-lg font-medium text-slate-300 truncate">
+                <div className="truncate">
                   {job.website_url ? (
-                    <a href={job.website_url} target="_blank" rel="noopener noreferrer" className="flex items-center text-blue-400 hover:underline gap-1.5 text-sm">
-                      Visit Site <ExternalLink className="w-3 h-3" />
+                    <a href={job.website_url} target="_blank" className="text-blue-400 text-sm hover:underline flex items-center gap-1">
+                      View Site <ExternalLink className="w-3 h-3" />
                     </a>
                   ) : (
-                    <span className="text-slate-600 text-sm">Not added</span>
+                    <span className="text-slate-600 text-sm italic">No link</span>
                   )}
                 </div>
               )}
             </div>
 
-            {/* NEW SCREENSHOT FIELD */}
+            {/* AUTOMATED DISPLAY STATUS */}
             <div className="col-span-2 bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-              <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Portfolio Screenshot URL</p>
-              {isEditing ? (
-                <div className="relative">
-                  <ImageIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                  <Input 
-                    placeholder="https://imgur.com/your-image.jpg" 
-                    value={editScreenshot} 
-                    onChange={(e) => setEditScreenshot(e.target.value)}
-                    className="pl-8 bg-slate-950 border-slate-700 h-9"
-                  />
-                </div>
-              ) : (
-                <div className="text-sm font-medium text-slate-300 truncate">
-                  {job.screenshot_url ? (
-                    <span className="text-green-500 flex items-center gap-2">
-                      <CheckCircle2 className="w-3 h-3" /> Image URL Linked
+              <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Portfolio Showcase Status</p>
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-slate-300">
+                  {editWebsite ? (
+                    <span className="text-blue-400 flex items-center gap-2">
+                      <Zap className="w-3 h-3 animate-pulse" /> Auto-generating preview...
                     </span>
                   ) : (
-                    <span className="text-slate-600 italic">No image linked yet</span>
+                    <span className="text-slate-600 italic">Enter a website URL to show in portfolio</span>
                   )}
                 </div>
-              )}
+                {job.screenshot_url && (
+                  <Badge variant="outline" className="text-[10px] border-blue-500/50 text-blue-400">
+                    LIVE
+                  </Badge>
+                )}
+              </div>
             </div>
           </div>
 
           {isEditing && (
-            <Button onClick={handleSave} disabled={loading} className="w-full bg-green-600 hover:bg-green-700">
-              <Save className="w-4 h-4 mr-2" /> Save Changes
+            <Button onClick={handleSave} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700">
+              <Save className="w-4 h-4 mr-2" /> Update & Generate Preview
             </Button>
           )}
 
@@ -229,44 +220,25 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
 
           <div className="space-y-3 pb-32">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-400 uppercase tracking-widest">
-              <FileText className="h-4 w-4" />
-              Design Brief
+              <FileText className="h-4 w-4" /> Brief
             </div>
-            <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-inner">
-              <p className="text-slate-300 whitespace-pre-wrap leading-relaxed italic text-sm">
-                "{job.details || "No project brief provided."}"
-              </p>
+            <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 italic text-sm text-slate-300">
+              "{job.details || "No details provided."}"
             </div>
           </div>
         </div>
 
-        <SheetFooter className="absolute bottom-0 left-0 w-full p-6 bg-slate-950/80 backdrop-blur-md border-t border-slate-800 flex-col sm:flex-row gap-3">
+        <SheetFooter className="absolute bottom-0 left-0 w-full p-6 bg-slate-950/80 backdrop-blur-md border-t border-slate-800 gap-3">
+          <Button variant="ghost" className="flex-1 text-slate-500" onClick={deleteJob} disabled={loading}>
+            <Trash2 className="mr-2 h-4 w-4" /> Delete
+          </Button>
           <Button 
-            variant="ghost" 
-            className="flex-1 text-slate-500 hover:text-red-400 hover:bg-red-400/10" 
-            onClick={deleteJob}
+            className={`flex-1 ${job.status === 'pending' ? 'bg-blue-600' : 'bg-slate-800'}`} 
+            onClick={() => updateStatus(job.status === 'pending' ? 'complete' : 'pending')} 
             disabled={loading}
           >
-            <Trash2 className="mr-2 h-4 w-4" /> Delete Project
+            {job.status === 'pending' ? 'Mark Complete' : 'Restore Pending'}
           </Button>
-
-          {job.status === 'pending' ? (
-            <Button 
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-900/20" 
-              onClick={() => updateStatus('complete')}
-              disabled={loading}
-            >
-              <CheckCircle2 className="mr-2 h-4 w-4" /> Mark Complete
-            </Button>
-          ) : (
-            <Button 
-              className="flex-1 bg-slate-800 hover:bg-slate-700 text-white" 
-              onClick={() => updateStatus('pending')}
-              disabled={loading}
-            >
-              <Clock className="mr-2 h-4 w-4" /> Restore to Pending
-            </Button>
-          )}
         </SheetFooter>
       </SheetContent>
     </Sheet>
