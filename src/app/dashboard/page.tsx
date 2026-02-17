@@ -33,18 +33,20 @@ export default async function DashboardPage() {
           <div className="lg:col-span-2 space-y-8">
              <JobTable jobs={allJobs} />
              
-             {/* Vercel Monitor now sits under the Job Table */}
+          
+
+          {/* RIGHT COLUMN: Entry & Actions */}
+          <div className="lg:col-span-1">
+            <ManualEntry />
+          </div>
+
+            {/* Vercel Monitor now sits under the Job Table */}
              <VercelMonitor 
                key={vercelToken} 
                vercelToken={vercelToken} 
                ntfyTopic={ntfyTopic} 
                ntfyToken={ntfyToken} 
              />
-          </div>
-
-          {/* RIGHT COLUMN: Entry & Actions */}
-          <div className="lg:col-span-1">
-            <ManualEntry />
           </div>
         </div>
       </div>
