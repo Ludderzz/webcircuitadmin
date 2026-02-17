@@ -30,11 +30,68 @@ export const VercelMonitor = ({
   const [lastChecked, setLastChecked] = useState("");
   const [mounted, setMounted] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [auditLoading, setAuditLoading] = useState<string | null>(null);
   const itemsPerPage = 5;
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // --- UPDATED: FULL 4-CATEGORY SEO & HEALTH AUDIT ---
+  const runSeoAudit = async (project: VercelProject) => {
+    const domain = project.targets?.production?.alias?.[0] || project.alias?.[0];
+    if (!domain) return alert("No public domain found for this project.");
+
+    setAuditLoading(project.id);
+    const apiKey = process.env.NEXT_PUBLIC_PAGESPEED_API_KEY;
+
+    try {
+      // 1. Fetching SEO, Performance, Accessibility, and Best Practices
+      const res = await fetch(
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://${domain}&key=${apiKey}&category=seo&category=performance&category=accessibility&category=best-practices&strategy=mobile`
+      );
+      const data = await res.json();
+
+      const cat = data.lighthouseResult.categories;
+      const scores = {
+        seo: Math.round(cat.seo.score * 100),
+        perf: Math.round(cat.performance.score * 100),
+        a11y: Math.round(cat.accessibility.score * 100),
+        best: Math.round(cat["best-practices"].score * 100),
+      };
+
+      // 2. Determine Notification Vibe (Tags/Priority) based on SEO score
+      const isHealthy = scores.seo >= 90 && scores.perf >= 80;
+
+      // 3. Send the detailed ntfy Notification
+      await fetch(`https://ntfy.sh/${ntfyTopic}`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${ntfyToken}`,
+          'Title': `Audit Report: ${project.name}`,
+          'Priority': scores.seo < 70 ? '4' : '3',
+          'Tags': isHealthy ? 'white_check_mark,chart_with_upwards_trend' : 'warning,bar_chart'
+        },
+        body: `
+Project: ${project.name}
+---------------------------
+🎯 SEO: ${scores.seo}%
+⚡ Speed: ${scores.perf}%
+♿ Access: ${scores.a11y}%
+🛠️ Technical: ${scores.best}%
+---------------------------
+Domain: ${domain}
+        `.trim()
+      });
+
+      alert(`Report Sent!\nSEO: ${scores.seo}% | Speed: ${scores.perf}%`);
+    } catch (err) {
+      console.error("Audit Error:", err);
+      alert("Audit failed. Ensure your API Key is in .env and the site is public.");
+    } finally {
+      setAuditLoading(null);
+    }
+  };
 
   const fetchProjects = async () => {
     try {
@@ -69,7 +126,6 @@ export const VercelMonitor = ({
     }
   };
 
-  // RESTORED: This is what the Ping button uses!
   const checkHealth = async (project: VercelProject) => {
     const state = project.targets?.production?.readyState || 'READY';
     const domain = project.targets?.production?.alias?.[0] || project.alias?.[0] || 'N/A';
@@ -173,6 +229,17 @@ export const VercelMonitor = ({
                 </p>
               </div>
               <div className="flex gap-2 shrink-0">
+                <button 
+                  disabled={auditLoading === p.id}
+                  onClick={() => runSeoAudit(p)}
+                  className={`text-[9px] font-bold uppercase px-3 py-2 rounded-lg transition-all active:scale-95 ${
+                    auditLoading === p.id 
+                      ? 'bg-slate-700 text-slate-500 animate-pulse' 
+                      : 'bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white'
+                  }`}
+                >
+                  {auditLoading === p.id ? 'Analyzing...' : 'SEO'}
+                </button>
                 <button 
                   onClick={() => triggerRollback(p)}
                   className="text-[9px] font-bold uppercase text-amber-500 bg-amber-500/10 hover:bg-amber-500 hover:text-black px-2 py-2 rounded-lg transition-all active:scale-95"
