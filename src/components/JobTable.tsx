@@ -1,311 +1,200 @@
 "use client"
 
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/client'
-import { 
-  Sheet, 
-  SheetContent, 
-  SheetHeader, 
-  SheetTitle, 
-  SheetDescription,
-  SheetFooter
-} from "@/components/ui/sheet"
-import { Button } from "@/components/ui/button"
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
-import { 
-  CheckCircle2, 
-  Clock, 
-  Trash2, 
-  Calendar, 
-  User, 
-  Building2, 
-  FileText,
-  PoundSterling,
-  Edit2,
-  Save,
-  Globe,
-  ExternalLink,
-  Zap,
-  RefreshCw 
-} from "lucide-react"
+import { Building2, ArrowUpRight, Repeat, Briefcase, Zap, Clock, CheckCircle, Search } from "lucide-react"
+import JobPopOut from './JobPopOut'
 
-interface JobPopOutProps {
-  job: any
-  onClose: () => void
-  onUpdate: () => void
+interface JobTableProps {
+  jobs: any[]
 }
 
-export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
-  const supabase = createClient()
-  const [loading, setLoading] = useState(false)
-  const [recapturing, setRecapturing] = useState(false)
-  const [isEditing, setIsEditing] = useState(false)
+export default function JobTable({ jobs }: JobTableProps) {
+  const router = useRouter()
+  const [selectedJob, setSelectedJob] = useState<any | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   
-  // Edit States
-  const [editCost, setEditCost] = useState('')
-  const [editWebsite, setEditWebsite] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'complete'>('pending')
+  const [showOnlyRecurring, setShowOnlyRecurring] = useState(false)
 
-  // Reset states when job changes
-  useEffect(() => {
-    if (job) {
-      setEditCost(job.cost?.toString() || '0')
-      setEditWebsite(job.website_url || '')
-      setIsEditing(false)
-    }
-  }, [job])
-
-  if (!job) return null
-
-  const handleSave = async () => {
-    setLoading(true)
-    let autoScreenshot = job.screenshot_url || ''
-
-    if (editWebsite && editWebsite !== job.website_url) {
-      try {
-        const response = await fetch(
-          `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&waitForTimeout=10000`
-        )
-        const json = await response.json()
-        if (json?.data?.screenshot?.url) {
-          autoScreenshot = json.data.screenshot.url
-        } else {
-          autoScreenshot = `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&meta=false&embed=screenshot.url&waitForTimeout=10000`
-        }
-      } catch (err) {
-        console.error("Microlink error:", err)
-      }
-    }
-
-    const { error } = await supabase
-      .from('jobs')
-      .update({ 
-        cost: Number(editCost),
-        website_url: editWebsite,
-        screenshot_url: autoScreenshot
-      })
-      .eq('id', job.id)
-
-    if (!error) {
-      await onUpdate() 
-      setIsEditing(false)
-    } else {
-      console.error("Error saving:", error.message)
-      alert("Failed to save changes.")
-    }
-    setLoading(false)
+  const handleUpdate = () => {
+    router.refresh()
   }
 
-  // DEDICATED RECAPTURE HANDLER
-  const handleRecapture = async () => {
-    if (!job.website_url) {
-      alert("No website URL attached to this job to recapture.")
-      return
-    }
+  // Multi-layer filter: Status -> Type -> Search Query
+  const filteredJobs = jobs.filter(job => {
+    const matchesStatus = job.status === statusFilter
+    const matchesRecurring = showOnlyRecurring ? job.is_recurring : true
+    
+    const searchLower = searchQuery.toLowerCase()
+    const matchesSearch = 
+      (job.business_name?.toLowerCase() || job.title?.toLowerCase() || "").includes(searchLower) ||
+      (job.customer_name?.toLowerCase() || "").includes(searchLower)
 
-    setRecapturing(true)
-    try {
-      const response = await fetch(
-        `https://api.microlink.io/?url=${encodeURIComponent(job.website_url)}&screenshot=true&waitForTimeout=10000`
-      )
-      const json = await response.json()
-      
-      const newScreenshot = json?.data?.screenshot?.url || 
-        `https://api.microlink.io/?url=${encodeURIComponent(job.website_url)}&screenshot=true&meta=false&embed=screenshot.url&waitForTimeout=10000`
+    return matchesStatus && matchesRecurring && matchesSearch
+  })
 
-      const { error } = await supabase
-        .from('jobs')
-        .update({ screenshot_url: newScreenshot })
-        .eq('id', job.id)
-
-      if (!error) {
-        await onUpdate()
-      } else {
-        alert("Failed to update screenshot in database.")
-      }
-    } catch (err) {
-      console.error("Recapture failed:", err)
-      alert("Screenshot recapture failed.")
-    }
-    setRecapturing(false)
-  }
-
-  const updateStatus = async (newStatus: 'pending' | 'complete') => {
-    setLoading(true)
-    const { error } = await supabase
-      .from('jobs')
-      .update({ status: newStatus })
-      .eq('id', job.id)
-
-    if (!error) await onUpdate()
-    setLoading(false)
-    onClose()
-  }
-
-  const deleteJob = async () => {
-    if (!confirm("Are you sure you want to delete this project?")) return
-    setLoading(true)
-    const { error } = await supabase.from('jobs').delete().eq('id', job.id)
-    if (!error) await onUpdate()
-    setLoading(false)
-    onClose()
-  }
+  const recurringTotal = jobs
+    .filter(j => j.is_recurring && j.status === statusFilter)
+    .reduce((sum, j) => sum + Number(j.cost), 0)
 
   return (
-    <Sheet open={!!job} onOpenChange={onClose}>
-      <SheetContent side="right" className="w-[400px] sm:w-[540px] bg-slate-950 text-slate-50 border-slate-800 p-0 overflow-y-auto">
-        <div className={`h-1.5 w-full ${job.status === 'complete' ? 'bg-green-500' : 'bg-orange-500'}`} />
-        
-        <div className="p-8 space-y-8">
-          <SheetHeader className="space-y-4 text-left">
-            <div className="flex items-center justify-between">
-              <Badge variant="outline" className={job.status === 'complete' ? 'border-green-500 text-green-500 bg-green-500/10' : 'border-orange-500 text-orange-500 bg-orange-500/10'}>
-                {job.status === 'complete' ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <Clock className="mr-1 h-3 w-3" />}
-                {job.status.toUpperCase()}
-              </Badge>
-              
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
-                onClick={() => setIsEditing(!isEditing)}
-              >
-                {isEditing ? "Cancel" : <><Edit2 className="w-3.5 h-3.5 mr-2" /> Edit Details</>}
-              </Button>
-            </div>
-
-            <div className="flex items-start gap-4">
-              <div className="w-16 h-16 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center">
-                <Building2 className="text-slate-700 w-8 h-8" />
-              </div>
-              <div>
-                <SheetTitle className="text-3xl font-bold text-slate-50 tracking-tight leading-none">
-                  {job.business_name || "New Project"}
-                </SheetTitle>
-                <SheetDescription className="text-slate-500 mt-2 flex items-center gap-2">
-                  <User className="h-3 w-3" /> {job.customer_name || "No Client Name"}
-                </SheetDescription>
-              </div>
-            </div>
-          </SheetHeader>
-
-          <div className="grid grid-cols-2 gap-4">
-            {/* REVENUE BOX */}
-            <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-              <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Revenue</p>
-              {isEditing ? (
-                <div className="relative">
-                  <PoundSterling className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                  <Input 
-                    type="number" 
-                    value={editCost} 
-                    onChange={(e) => setEditCost(e.target.value)}
-                    className="pl-8 bg-slate-950 border-slate-700 h-9"
-                  />
-                </div>
-              ) : (
-                <div className="text-2xl font-bold text-slate-50">
-                  £{Number(job.cost || 0).toLocaleString('en-GB')}
-                </div>
-              )}
-            </div>
-            
-            {/* WEBSITE LINK BOX */}
-            <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-              <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Website Link</p>
-              {isEditing ? (
-                <div className="relative">
-                  <Globe className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                  <Input 
-                    placeholder="https://..." 
-                    value={editWebsite} 
-                    onChange={(e) => setEditWebsite(e.target.value)}
-                    className="pl-8 bg-slate-950 border-slate-700 h-9"
-                  />
-                </div>
-              ) : (
-                <div className="truncate text-sm">
-                  {job.website_url ? (
-                    <a href={job.website_url} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline flex items-center gap-1">
-                      {new URL(job.website_url).hostname} <ExternalLink className="w-3 h-3" />
-                    </a>
-                  ) : (
-                    <span className="text-slate-600 italic">No link</span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* AUTOMATED PREVIEW STATUS & RECAPTURE BUTTON */}
-            <div className="col-span-2 bg-slate-900/50 border border-slate-800 p-4 rounded-xl space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-500 uppercase">Portfolio Showcase Status</p>
-                {job.screenshot_url && !isEditing && (
-                  <Badge variant="outline" className="text-[10px] border-blue-500/50 text-blue-400">
-                    LIVE ON PORTFOLIO
-                  </Badge>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between gap-4">
-                <div className="text-sm font-medium">
-                  {job.screenshot_url ? (
-                    <span className="text-green-500 flex items-center gap-2">
-                      <CheckCircle2 className="w-3 h-3" /> Preview Ready
-                    </span>
-                  ) : (
-                    <span className="text-slate-600 italic">No preview generated</span>
-                  )}
-                </div>
-
-                {job.website_url && !isEditing && (
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={handleRecapture}
-                    disabled={recapturing}
-                    className="border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 hover:text-white"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${recapturing ? 'animate-spin' : ''}`} />
-                    {recapturing ? "Recapturing (~10s)..." : "Recapture Screenshot"}
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {isEditing && (
-            <Button onClick={handleSave} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700">
-              <Save className="w-4 h-4 mr-2" /> {loading ? "Saving..." : "Update Details"}
-            </Button>
-          )}
-
-          <Separator className="bg-slate-800" />
-
-          <div className="space-y-3 pb-32">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-400 uppercase tracking-widest">
-              <FileText className="h-4 w-4" /> Design Brief
-            </div>
-            <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 text-sm text-slate-300 italic">
-              "{job.details || "No details provided."}"
-            </div>
-          </div>
+    <div className="w-full space-y-6 group">
+      <div className="flex flex-col gap-4">
+        {/* Search Bar Row */}
+        <div className="relative w-full">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <Input 
+            placeholder="Search business or customer name..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 bg-slate-900/50 border-slate-800 text-slate-200 placeholder:text-slate-600 focus:ring-blue-500/20 focus:border-blue-500/50"
+          />
         </div>
 
-        <SheetFooter className="absolute bottom-0 left-0 w-full p-6 bg-slate-950/80 backdrop-blur-md border-t border-slate-800 gap-3">
-          <Button variant="ghost" className="flex-1 text-slate-500 hover:text-red-400" onClick={deleteJob} disabled={loading}>
-            <Trash2 className="mr-2 h-4 w-4" /> Delete
-          </Button>
-          <Button 
-            className={`flex-1 ${job.status === 'pending' ? 'bg-blue-600' : 'bg-slate-800'}`} 
-            onClick={() => updateStatus(job.status === 'pending' ? 'complete' : 'pending')} 
-            disabled={loading}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <Tabs 
+            value={statusFilter} 
+            className="w-full sm:w-auto" 
+            onValueChange={(v) => setStatusFilter(v as any)}
           >
-            {job.status === 'pending' ? 'Mark Complete' : 'Restore Pending'}
-          </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+            <TabsList className="bg-slate-900 border border-slate-800 p-1">
+              <TabsTrigger value="pending" className="data-[state=active]:bg-orange-500/10 data-[state=active]:text-orange-500 gap-2">
+                <Clock className="w-3.5 h-3.5" />
+                Pending ({jobs.filter(j => j.status === 'pending').length})
+              </TabsTrigger>
+              <TabsTrigger value="complete" className="data-[state=active]:bg-green-500/10 data-[state=active]:text-green-500 gap-2">
+                <CheckCircle className="w-3.5 h-3.5" />
+                Complete ({jobs.filter(j => j.status === 'complete').length})
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          <Tabs 
+            value={showOnlyRecurring ? "recurring" : "all"} 
+            className="w-full sm:w-auto" 
+            onValueChange={(v) => setShowOnlyRecurring(v === "recurring")}
+          >
+            <TabsList className="bg-slate-900 border border-slate-800 p-1">
+              <TabsTrigger value="all" className="gap-2">
+                <Briefcase className="w-3.5 h-3.5" />
+                All Projects
+              </TabsTrigger>
+              <TabsTrigger value="recurring" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white gap-2">
+                <Repeat className="w-3.5 h-3.5" />
+                Recurring
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        {showOnlyRecurring && (
+          <div className="flex items-center gap-3 px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-lg animate-in fade-in slide-in-from-top-2">
+            <Zap className="w-4 h-4 text-blue-400" />
+            <span className="text-xs font-bold text-blue-400 uppercase tracking-widest">
+              {statusFilter} MRR: £{recurringTotal.toLocaleString('en-GB')}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-slate-800 bg-slate-900/40 backdrop-blur-sm overflow-hidden shadow-2xl">
+        <Table>
+          <TableHeader className="bg-slate-900/80">
+            <TableRow className="hover:bg-transparent border-slate-800">
+              <TableHead className="text-slate-500 font-semibold uppercase text-[11px] tracking-wider py-4 px-6">
+                Client & Project
+              </TableHead>
+              <TableHead className="text-slate-500 font-semibold uppercase text-[11px] tracking-wider py-4">
+                Revenue
+              </TableHead>
+              <TableHead className="text-slate-500 font-semibold uppercase text-[11px] tracking-wider py-4 text-right px-6">
+                Type
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredJobs.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={3} className="h-32 text-center text-slate-500 italic">
+                  {searchQuery 
+                    ? `No results found for "${searchQuery}"` 
+                    : `No ${showOnlyRecurring ? 'recurring' : ''} ${statusFilter} projects found.`
+                  }
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredJobs.map((job) => (
+                <TableRow
+                  key={job.id}
+                  className="cursor-pointer border-slate-800/50 hover:bg-blue-500/[0.03] transition-all duration-200 group/row"
+                  onClick={() => setSelectedJob(job)}
+                >
+                  <TableCell className="py-4 px-6">
+                    <div className="flex items-center gap-4">
+                      <div className="relative">
+                        {job.logo_url ? (
+                          <img 
+                            src={job.logo_url} 
+                            alt="" 
+                            className="w-10 h-10 rounded-lg object-cover border border-slate-700 bg-slate-800 group-hover/row:border-blue-500/50 transition-colors" 
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center group-hover/row:border-blue-500/50 transition-colors">
+                            <Building2 className="text-slate-500 w-5 h-5" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-200 group-hover/row:text-blue-400 transition-colors flex items-center gap-1">
+                          {job.business_name || job.title}
+                          <ArrowUpRight className="w-3 h-3 opacity-0 group-hover/row:opacity-100 transition-all transform translate-y-1 group-hover/row:translate-y-0" />
+                        </span>
+                        <span className="text-xs text-slate-500 font-medium">
+                          {job.customer_name || "Direct Client"}
+                        </span>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="py-4 font-mono font-medium text-slate-300">
+                    <span className="text-green-500/80 mr-0.5 text-xs">£</span>
+                    {Number(job.cost).toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+                  </TableCell>
+                  <TableCell className="py-4 text-right px-6">
+                    {job.is_recurring ? (
+                      <Badge variant="secondary" className="bg-blue-500/20 text-blue-400 border-blue-500/30 px-2 py-0.5 rounded-md">
+                        <Repeat className="w-3 h-3 mr-1" />
+                        Monthly
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-slate-500 border-slate-800 bg-transparent px-2 py-0.5 rounded-md">
+                        Project
+                      </Badge>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <JobPopOut 
+        job={selectedJob} 
+        onClose={() => setSelectedJob(null)} 
+        onUpdate={handleUpdate}
+      />
+    </div>
   )
 }
