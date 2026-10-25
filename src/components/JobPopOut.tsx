@@ -58,24 +58,33 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
 
   if (!job) return null
 
+  // HELPER TO GENERATE SCREENSHOT WITH 10-SECOND DELAY
+  const generateScreenshotUrl = async (url: string) => {
+    try {
+      // 10-second delay parameter passed to Microlink
+      const response = await fetch(
+        `https://api.microlink.io/?url=${encodeURIComponent(url)}&screenshot=true&waitForTimeout=10000`
+      )
+      const json = await response.json()
+
+      // If Microlink responds with screenshot data and no rate limit error
+      if (json?.status === 'success' && json?.data?.screenshot?.url) {
+        return json.data.screenshot.url
+      }
+    } catch (err) {
+      console.error("Microlink screenshot fetch failed, switching to fallback:", err)
+    }
+
+    // Unthrottled Fallback (Thum.io with 10-second delay parameter)
+    return `https://image.thum.io/get/width/1200/crop/800/delay/10/${url}`
+  }
+
   const handleSave = async () => {
     setLoading(true)
     let autoScreenshot = job.screenshot_url || ''
 
     if (editWebsite && editWebsite !== job.website_url) {
-      try {
-        const response = await fetch(
-          `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&waitForTimeout=10000`
-        )
-        const json = await response.json()
-        if (json?.data?.screenshot?.url) {
-          autoScreenshot = json.data.screenshot.url
-        } else {
-          autoScreenshot = `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&meta=false&embed=screenshot.url&waitForTimeout=10000`
-        }
-      } catch (err) {
-        console.error("Microlink error:", err)
-      }
+      autoScreenshot = await generateScreenshotUrl(editWebsite)
     }
 
     const { error } = await supabase
@@ -106,13 +115,7 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
 
     setRecapturing(true)
     try {
-      const response = await fetch(
-        `https://api.microlink.io/?url=${encodeURIComponent(job.website_url)}&screenshot=true&waitForTimeout=10000`
-      )
-      const json = await response.json()
-      
-      const newScreenshot = json?.data?.screenshot?.url || 
-        `https://api.microlink.io/?url=${encodeURIComponent(job.website_url)}&screenshot=true&meta=false&embed=screenshot.url&waitForTimeout=10000`
+      const newScreenshot = await generateScreenshotUrl(job.website_url)
 
       const { error } = await supabase
         .from('jobs')
@@ -277,7 +280,7 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
 
           {isEditing && (
             <Button onClick={handleSave} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700">
-              <Save className="w-4 h-4 mr-2" /> {loading ? "Saving..." : "Update Details"}
+              <Save className="w-4 h-4 mr-2" /> {loading ? "Saving (~10s delay)..." : "Update Details"}
             </Button>
           )}
 
