@@ -59,12 +59,29 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
   const handleSave = async () => {
     setLoading(true)
     
-    // 1. Generate the automated screenshot URL
-    const autoScreenshot = editWebsite 
-  ? `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&meta=false&embed=screenshot.url&waitForTimeout=10000`
-  : ''
+    let autoScreenshot = ''
 
-    // 2. Update Supabase
+    if (editWebsite) {
+      try {
+        // Query Microlink API with a 10-second wait delay (10000ms)
+        const response = await fetch(
+          `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&waitForTimeout=10000`
+        )
+        const json = await response.json()
+        
+        if (json?.data?.screenshot?.url) {
+          autoScreenshot = json.data.screenshot.url
+        } else {
+          // Fallback direct embed URL if API response format varies
+          autoScreenshot = `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&meta=false&embed=screenshot.url&waitForTimeout=10000`
+        }
+      } catch (err) {
+        console.error("Microlink error:", err)
+        autoScreenshot = `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&meta=false&embed=screenshot.url&waitForTimeout=10000`
+      }
+    }
+
+    // 2. Update Supabase with resolved screenshot URL
     const { error } = await supabase
       .from('jobs')
       .update({ 
@@ -199,7 +216,7 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
                   {isEditing ? (
                     editWebsite ? (
                       <span className="text-blue-400 flex items-center gap-2">
-                        <Zap className="w-3 h-3 animate-pulse" /> Auto-generating preview...
+                        <Zap className="w-3 h-3 animate-pulse" /> Auto-generating preview (10s delay configured)...
                       </span>
                     ) : (
                       <span className="text-slate-600 italic">Link required for preview</span>
@@ -225,7 +242,7 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
 
           {isEditing && (
             <Button onClick={handleSave} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700">
-              <Save className="w-4 h-4 mr-2" /> {loading ? "Saving..." : "Update & Sync Preview"}
+              <Save className="w-4 h-4 mr-2" /> {loading ? "Generating Preview (takes ~10s)..." : "Update & Sync Preview"}
             </Button>
           )}
 
