@@ -61,8 +61,8 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
     
     // 1. Generate the automated screenshot URL
     const autoScreenshot = editWebsite 
-      ? `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&meta=false&embed=screenshot.url`
-      : ''
+  ? `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&meta=false&embed=screenshot.url&waitForTimeout=10000`
+  : ''
 
     // 2. Update Supabase
     const { error } = await supabase
