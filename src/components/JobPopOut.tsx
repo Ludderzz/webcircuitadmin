@@ -27,7 +27,8 @@ import {
   Save,
   Globe,
   ExternalLink,
-  Zap 
+  Zap,
+  RefreshCw 
 } from "lucide-react"
 
 interface JobPopOutProps {
@@ -39,6 +40,7 @@ interface JobPopOutProps {
 export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
   const supabase = createClient()
   const [loading, setLoading] = useState(false)
+  const [recapturing, setRecapturing] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   
   // Edit States
@@ -58,30 +60,24 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
 
   const handleSave = async () => {
     setLoading(true)
-    
-    let autoScreenshot = ''
+    let autoScreenshot = job.screenshot_url || ''
 
-    if (editWebsite) {
+    if (editWebsite && editWebsite !== job.website_url) {
       try {
-        // Query Microlink API with a 10-second wait delay (10000ms)
         const response = await fetch(
           `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&waitForTimeout=10000`
         )
         const json = await response.json()
-        
         if (json?.data?.screenshot?.url) {
           autoScreenshot = json.data.screenshot.url
         } else {
-          // Fallback direct embed URL if API response format varies
           autoScreenshot = `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&meta=false&embed=screenshot.url&waitForTimeout=10000`
         }
       } catch (err) {
         console.error("Microlink error:", err)
-        autoScreenshot = `https://api.microlink.io/?url=${encodeURIComponent(editWebsite)}&screenshot=true&meta=false&embed=screenshot.url&waitForTimeout=10000`
       }
     }
 
-    // 2. Update Supabase with resolved screenshot URL
     const { error } = await supabase
       .from('jobs')
       .update({ 
@@ -92,7 +88,6 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
       .eq('id', job.id)
 
     if (!error) {
-      // 3. Trigger the parent refresh
       await onUpdate() 
       setIsEditing(false)
     } else {
@@ -100,6 +95,40 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
       alert("Failed to save changes.")
     }
     setLoading(false)
+  }
+
+  // DEDICATED RECAPTURE HANDLER
+  const handleRecapture = async () => {
+    if (!job.website_url) {
+      alert("No website URL attached to this job to recapture.")
+      return
+    }
+
+    setRecapturing(true)
+    try {
+      const response = await fetch(
+        `https://api.microlink.io/?url=${encodeURIComponent(job.website_url)}&screenshot=true&waitForTimeout=10000`
+      )
+      const json = await response.json()
+      
+      const newScreenshot = json?.data?.screenshot?.url || 
+        `https://api.microlink.io/?url=${encodeURIComponent(job.website_url)}&screenshot=true&meta=false&embed=screenshot.url&waitForTimeout=10000`
+
+      const { error } = await supabase
+        .from('jobs')
+        .update({ screenshot_url: newScreenshot })
+        .eq('id', job.id)
+
+      if (!error) {
+        await onUpdate()
+      } else {
+        alert("Failed to update screenshot in database.")
+      }
+    } catch (err) {
+      console.error("Recapture failed:", err)
+      alert("Screenshot recapture failed.")
+    }
+    setRecapturing(false)
   }
 
   const updateStatus = async (newStatus: 'pending' | 'complete') => {
@@ -208,33 +237,39 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
               )}
             </div>
 
-            {/* AUTOMATED PREVIEW STATUS */}
-            <div className="col-span-2 bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-              <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Portfolio Showcase Status</p>
+            {/* AUTOMATED PREVIEW STATUS & RECAPTURE BUTTON */}
+            <div className="col-span-2 bg-slate-900/50 border border-slate-800 p-4 rounded-xl space-y-4">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-medium">
-                  {isEditing ? (
-                    editWebsite ? (
-                      <span className="text-blue-400 flex items-center gap-2">
-                        <Zap className="w-3 h-3 animate-pulse" /> Auto-generating preview (10s delay configured)...
-                      </span>
-                    ) : (
-                      <span className="text-slate-600 italic">Link required for preview</span>
-                    )
-                  ) : (
-                    job.screenshot_url ? (
-                      <span className="text-green-500 flex items-center gap-2">
-                        <CheckCircle2 className="w-3 h-3" /> Preview Ready
-                      </span>
-                    ) : (
-                      <span className="text-slate-600 italic">No preview generated</span>
-                    )
-                  )}
-                </div>
+                <p className="text-xs font-semibold text-slate-500 uppercase">Portfolio Showcase Status</p>
                 {job.screenshot_url && !isEditing && (
                   <Badge variant="outline" className="text-[10px] border-blue-500/50 text-blue-400">
                     LIVE ON PORTFOLIO
                   </Badge>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <div className="text-sm font-medium">
+                  {job.screenshot_url ? (
+                    <span className="text-green-500 flex items-center gap-2">
+                      <CheckCircle2 className="w-3 h-3" /> Preview Ready
+                    </span>
+                  ) : (
+                    <span className="text-slate-600 italic">No preview generated</span>
+                  )}
+                </div>
+
+                {job.website_url && !isEditing && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={handleRecapture}
+                    disabled={recapturing}
+                    className="border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 hover:text-white"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${recapturing ? 'animate-spin' : ''}`} />
+                    {recapturing ? "Recapturing (~10s)..." : "Recapture Screenshot"}
+                  </Button>
                 )}
               </div>
             </div>
@@ -242,7 +277,7 @@ export default function JobPopOut({ job, onClose, onUpdate }: JobPopOutProps) {
 
           {isEditing && (
             <Button onClick={handleSave} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700">
-              <Save className="w-4 h-4 mr-2" /> {loading ? "Generating Preview (takes ~10s)..." : "Update & Sync Preview"}
+              <Save className="w-4 h-4 mr-2" /> {loading ? "Saving..." : "Update Details"}
             </Button>
           )}
 
